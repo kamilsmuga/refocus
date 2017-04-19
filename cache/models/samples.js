@@ -12,7 +12,6 @@
 'use strict'; // eslint-disable-line strict
 
 const helper = require('../../api/v1/helpers/nouns/samples');
-const aspectHelper = require('../../api/v1/helpers/nouns/aspects');
 const u = require('../../api/v1/helpers/verbs/utils');
 const sampleStore = require('../sampleStore');
 const redisClient = require('../redisCache').client.sampleStore;
@@ -28,7 +27,6 @@ const fu = require('../../api/v1/helpers/verbs/findUtils.js');
 const aspectType = redisOps.aspectType;
 const sampleType = redisOps.sampleType;
 const featureToggles = require('feature-toggles');
-
 const sampFields = {
   MSG_BODY: 'messageBody',
   MSG_CODE: 'messageCode',
@@ -53,37 +51,36 @@ const TWO = 2;
 const MINUS_ONE = -1;
 
 /**
- * Checks if the user has the permission to perform the write operation or not
- * @param  {String}  aspectName - Name of the aspect
- * @param  {String}  sampleName - Name of the sample
+ * Checks if the user has the permission to perform the write operation on the
+ * sample or not
+ * @param  {String}  aspect - Aspect object
+ * @param  {String}  sample - Sample object
  * @param  {String}  userName -  User performing the operation
  * @param  {Boolean} isBulk   - Flag to indicate if the action is a bulk
  * operation or not
  * @returns {Promise} - which resolves to true if the user has write permission
  */
-function checkWritePermission(aspectName, sampleName, userName, isBulk) {
-  const hasWritePerm = featureToggles
+function checkWritePermission(aspect, sample, userName, isBulk) {
+  let isWritable = true;
+  if (aspect.writers && aspect.writers.length) {
+    isWritable = featureToggles
                         .isFeatureEnabled('enforceWritePermission') ?
-                        sampleStore.isSampleWritable(aspectHelper.model,
-                          aspectName, userName) : Promise.resolve(true);
-  return hasWritePerm
-    .then((ok) => {
-      // reject the promise if the user does not have write permission
-      if (!ok) {
-        const err = new redisErrors.UpdateDeleteForbidden({
-          explanation: `The user: ${userName}, does not have write permission` +
-            ` on the sample: ${sampleName}`,
-        });
-        if (isBulk) {
-          return Promise.reject({ isFailed: true, explanation: err });
-        }
-
-        return Promise.reject(err);
-      }
-
-      return Promise.resolve(true);
+                        aspect.writers.includes(userName) : true;
+  }
+  if (!isWritable) {
+    const err = new redisErrors.UpdateDeleteForbidden({
+      explanation: `The user: ${userName}, does not have write permission` +
+        ` on the sample: ${sample.name}`,
     });
-}
+    if (isBulk) {
+      return Promise.reject({ isFailed: true, explanation: err });
+    }
+
+    return Promise.reject(err);
+  }
+
+  return Promise.resolve(true);
+} // checkWritePermission
 
 /**
  * Sort by appending all fields value in a string and then comparing them.
@@ -427,22 +424,24 @@ function upsertOneSample(sampleQueryBodyObj, isBulk, userName) {
   );
   let aspectObj = {};
   let subjectId = '';
-
-  return checkWritePermission(aspectName, sampleName, userName, isBulk)
+  let subject;
+  let aspect;
+  let sample;
 
   /*
    * if any of the promise errors, the subsequent promise does not process and
    * error is returned, else sample is returned
   */
-  .then(() => Promise.all([
+  return Promise.all([
     redisClient.hgetallAsync(subjKey),
     redisClient.hgetallAsync(
     sampleStore.toKey(constants.objectType.aspect, aspectName)
     ),
     redisClient.hgetallAsync(sampleKey),
-  ]))
+  ])
   .then((responses) => {
-    const [subject, aspect, sample] = responses;
+    [subject, aspect, sample] = responses;
+
     if (!subject) {
       handleUpsertError(constants.objectType.subject, isBulk);
     }
@@ -455,6 +454,10 @@ function upsertOneSample(sampleQueryBodyObj, isBulk, userName) {
       aspect, constants.fieldsToStringify.aspect
     );
 
+    return checkWritePermission(aspectObj, sampleQueryBodyObj,
+      userName, isBulk);
+  })
+  .then(() => {
     subjectId = subject.subjectId;
 
     // sampleQueryBodyObj updated with fields
@@ -511,8 +514,8 @@ module.exports = {
     const subjAbsPath = subjAspArr[ZERO];
     const aspName = subjAspArr[ONE];
     let sampObjToReturn;
-    return checkWritePermission(aspName, sampleName, userName)
-    .then(() => redisOps.getHashPromise(sampleType, sampleName))
+    let aspect;
+    return redisOps.getHashPromise(sampleType, sampleName)
     .then((sampleObj) => {
       if (!sampleObj) {
         throw new redisErrors.ResourceNotFoundError({
@@ -521,18 +524,27 @@ module.exports = {
       }
 
       sampObjToReturn = sampleObj;
-      cmds.push(redisOps.getHashCmd(aspectType, aspName));
+      return redisOps.getHashPromise(aspectType, aspName);
+    })
+    .then((aspObj) => {
+      if (!aspObj) {
+        throw new redisErrors.ResourceNotFoundError({
+          explanation: 'Aspect not found.',
+        });
+      }
+      aspect = aspObj;
+      return checkWritePermission(aspect, sampObjToReturn, userName);
+    })
+    .then(() => {
       cmds.push(redisOps.delKeyFromIndexCmd(sampleType, sampleName));
       cmds.push(redisOps.delHashCmd(sampleType, sampleName));
 
       return redisOps.delAspFromSubjSet(subjAbsPath, aspName);
     })
     .then(() => redisOps.executeBatchCmds(cmds))
-    .then((response) => {
-      const asp = response[ZERO];
-
+    .then(() => {
       // attach aspect and links to sample
-      const resSampAsp = cleanAddAspectToSample(sampObjToReturn, asp);
+      const resSampAsp = cleanAddAspectToSample(sampObjToReturn, aspect);
       return resSampAsp;
     });
   },
@@ -555,8 +567,7 @@ module.exports = {
     const aspectName = sampAspArr[ONE];
     let currSampObj;
     let aspectObj;
-    return checkWritePermission(aspectName, sampleName, userName)
-    .then(() => redisOps.getHashPromise(sampleType, sampleName))
+    return redisOps.getHashPromise(sampleType, sampleName)
     .then((sampObj) => {
       if (!sampObj) {
         throw new redisErrors.ResourceNotFoundError({
@@ -575,6 +586,9 @@ module.exports = {
       }
 
       aspectObj = aspObj;
+      return checkWritePermission(aspectObj, currSampObj, userName);
+    })
+    .then(() => {
       let updatedRlinks = [];
       if (params.relName) { // delete only this related link
         const currRlinks = JSON.parse(currSampObj.relatedLinks);
@@ -586,7 +600,7 @@ module.exports = {
       // if no change in related links, then return the object.
       if (JSON.stringify(updatedRlinks) ===
         JSON.stringify(currSampObj.relatedLinks)) {
-        Promise.resolve(cleanAddAspectToSample(currSampObj, aspObj));
+        Promise.resolve(cleanAddAspectToSample(currSampObj, aspectObj));
       }
 
       const hmsetObj = {};
@@ -654,8 +668,11 @@ module.exports = {
         aspObj, constants.fieldsToStringify.aspect
       );
 
+      return checkWritePermission(aspectObj, currSampObj, userName);
+    })
+    .then(() => {
       if (reqBody.value) {
-        const status = sampleUtils.computeStatus(aspObj, reqBody.value);
+        const status = sampleUtils.computeStatus(aspectObj, reqBody.value);
         if (currSampObj[sampFields.STATUS] !== status) {
           reqBody[sampFields.PRVS_STATUS] = currSampObj[sampFields.STATUS];
           reqBody[sampFields.STS_CHNGED_AT] = new Date().toISOString();
@@ -799,8 +816,7 @@ module.exports = {
     const aspectName = sampAspArr[ONE];
     let currSampObj;
     let aspectObj;
-    return checkWritePermission(aspectName, sampleName, userName)
-    .then(() => redisOps.getHashPromise(sampleType, sampleName))
+    return redisOps.getHashPromise(sampleType, sampleName)
     .then((sampObj) => {
       if (!sampObj) {
         throw new redisErrors.ResourceNotFoundError({
@@ -818,15 +834,18 @@ module.exports = {
         });
       }
 
+      aspectObj = sampleStore.arrayStringsToJson(
+        aspObj, constants.fieldsToStringify.aspect
+      );
+
+      return checkWritePermission(aspectObj, currSampObj, userName);
+    })
+    .then(() => {
       cleanQueryBodyObj(reqBody);
       let value = '';
       if (reqBody.value) {
         value = reqBody.value;
       }
-
-      aspectObj = sampleStore.arrayStringsToJson(
-        aspObj, constants.fieldsToStringify.aspect
-      );
 
       // change these only if status is updated
       const status = sampleUtils.computeStatus(aspectObj, value);
