@@ -9,7 +9,7 @@
 /**
  * api/v1/controllers/aspects.js
  */
-'use strict';
+'use strict'; // eslint-disable-line strict
 
 const featureToggles = require('feature-toggles');
 const utils = require('./utils');
@@ -30,8 +30,7 @@ const doPost = require('../helpers/verbs/doPost');
 const doPut = require('../helpers/verbs/doPut');
 const u = require('../helpers/verbs/utils');
 const httpStatus = require('../constants').httpStatus;
-const ZERO = 0;
-const ONE = 1;
+const redisOps = require('../../../cache/redisOps');
 
 /**
  * Validates the given fields from request body or url.
@@ -175,10 +174,38 @@ module.exports = {
     const toPost = params.queryBody.value;
     const options = {};
     options.where = u.whereClauseForNameInArr(toPost);
+    let users;
     userProps.model.findAll(options)
     .then((usrs) => {
+      users = usrs;
+      if (featureToggles.isFeatureEnabled('enableRedisSampleStore')) {
+        return u.findByKey(helper, params)
+        .then((o) => u.isWritable(req, o,
+            featureToggles.isFeatureEnabled('enforceWritePermission')))
+          .then((o) => redisOps.getValue('aspect', o.name))
+          .then((cachedAspect) => {
+            if (cachedAspect) {
+              const userSet = new Set();
+              usrs.forEach((user) => {
+                userSet.add(user.dataValues.name);
+              });
+              cachedAspect.writers = cachedAspect.writers || [];
+              Array.from(userSet).forEach((user) => {
+                cachedAspect.writers.push(user);
+              });
+              return redisOps.hmSet('aspect', cachedAspect.name, cachedAspect);
+            }
+
+            return Promise.resolve(true);
+          })
+          .catch((err) => Promise.resolve(err));
+      }
+
+      return Promise.resolve(true);
+    })
+    .then(() => {
       doPostAssoc(req, res, next, helper,
-        helper.belongsToManyAssoc.users, usrs);
+        helper.belongsToManyAssoc.users, users);
     });
   }, // postAspectWriters
 
@@ -237,7 +264,26 @@ module.exports = {
    * @param {Function} next - The next middleware function in the stack
    */
   deleteAspectWriters(req, res, next) {
-    doDeleteAllAssoc(req, res, next, helper, helper.belongsToManyAssoc.users);
+    if (featureToggles.isFeatureEnabled('enableRedisSampleStore')) {
+      const params = req.swagger.params;
+      u.findByKey(helper, params)
+      .then((o) => u.isWritable(req, o,
+          featureToggles.isFeatureEnabled('enforceWritePermission')))
+        .then((o) => redisOps.getValue('aspect', o.name))
+        .then((cachedAspect) => {
+          if (cachedAspect) {
+            cachedAspect.writers = [];
+            return redisOps.hmSet('aspect', cachedAspect.name, cachedAspect);
+          }
+
+          return Promise.resolve(true);
+        })
+        .then(() => doDeleteAllAssoc(req, res, next, helper,
+              helper.belongsToManyAssoc.users))
+        .catch((err) => u.handleError(next, err, helper.modelName));
+    } else {
+      doDeleteAllAssoc(req, res, next, helper, helper.belongsToManyAssoc.users);
+    }
   },
 
   /**
@@ -251,8 +297,44 @@ module.exports = {
    */
   deleteAspectWriter(req, res, next) {
     const userNameOrId = req.swagger.params.userNameOrId.value;
-    doDeleteOneAssoc(req, res, next, helper,
+    let aspectName;
+    let userName;
+    if (featureToggles.isFeatureEnabled('enableRedisSampleStore')) {
+      const params = req.swagger.params;
+      u.findByKey(helper, params)
+      .then((o) => u.isWritable(req, o,
+          featureToggles.isFeatureEnabled('enforceWritePermission')))
+      .then((o) => {
+        aspectName = o.name;
+        const options = {};
+        options.where = u.whereClauseForNameOrId(params.userNameOrId.value);
+        return u.findAssociatedInstances(helper,
+         params, helper.belongsToManyAssoc.users, options);
+      })
+      .then((o) => {
+        u.throwErrorForEmptyArray(o,
+           params.userNameOrId.value, userProps.modelName);
+
+        // the object "o" here is always an array of length 1
+        userName = o[0].dataValues.name;
+        return redisOps.getValue('aspect', aspectName);
+      })
+      .then((cachedAspect) => {
+        if (cachedAspect) {
+          cachedAspect.writers = cachedAspect.writers
+              .filter((writer) => writer !== userName);
+          return redisOps.hmSet('aspect', cachedAspect.name, cachedAspect);
+        }
+
+        return Promise.resolve(true);
+      })
+      .then(() => doDeleteOneAssoc(req, res, next, helper,
+        helper.belongsToManyAssoc.users, userNameOrId))
+      .catch((err) => u.handleError(next, err, helper.modelName));
+    } else {
+      doDeleteOneAssoc(req, res, next, helper,
         helper.belongsToManyAssoc.users, userNameOrId);
+    }
   },
 
   /**

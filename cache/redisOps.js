@@ -13,6 +13,7 @@
 
 const redisStore = require('./sampleStore');
 const redisClient = require('./redisCache').client.sampleStore;
+const rsConstant = redisStore.constants;
 const subjectType = redisStore.constants.objectType.subject;
 const aspectType = redisStore.constants.objectType.aspect;
 const sampleType = redisStore.constants.objectType.sample;
@@ -44,6 +45,23 @@ function hmSet(objectName, name, value) {
   .then((ok) => Promise.resolve(ok))
   .catch((err) => Promise.reject(err));
 } // hmSet
+
+/**
+ * Get the value that is mapped to a key
+ * @param  {String} type - The type of the object on which the operation is to
+ * be performed
+ * @param  {String} name -  Name of the key
+ * @returns {Promise} - which resolves to the value associated with the key
+ */
+function getValue(type, name) {
+  const nameKey = redisStore.toKey(type, name);
+  return redisClient.hgetallAsync(nameKey)
+  .then((value) => {
+    redisStore.arrayStringsToJson(value, rsConstant.fieldsToStringify[type]);
+    return Promise.resolve(value);
+  })
+  .catch((err) => Promise.reject(err));
+} // getValue
 
 /**
  * Adds an entry identified by name to the master list of indices identified
@@ -246,7 +264,7 @@ function renameKeys(type, objectName, oldName, newName) {
  *
  * @param {Array} arr Contains strings
  * @param {String} str The string to check against strings in array
- * @retuns {Boolean} whether the string is unique or not
+ * @returns {Boolean} whether the string is unique or not
  */
 function isStringInArray(arr, str) {
   let isStringUnique = true;
@@ -325,7 +343,6 @@ module.exports = {
    * @returns {Promise} - to update the subject
    */
   addAspectNameToSubject(subjKey, subjectId, name) {
-    let isNameUnique = true;
     return redisClient.hgetallAsync(subjKey)
     .then((subject) => {
       const aspectNames = JSON.parse(subject.aspectNames || '[]');
@@ -352,7 +369,7 @@ module.exports = {
     .then((subject) => {
 
       // if case insensitive match, return true
-      let aspects = JSON.parse(subject.aspectNames);
+      const aspects = JSON.parse(subject.aspectNames);
       return !isStringInArray(aspects, aspName);
     });
   },
@@ -464,4 +481,6 @@ module.exports = {
   aspectType,
 
   sampleType,
+
+  getValue,
 }; // export
