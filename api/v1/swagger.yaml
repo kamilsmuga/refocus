@@ -245,10 +245,10 @@ paths:
     post:
       security:
         - jwt: []
-      summary: Create a new aspect
+      summary: Create a new aspect or multiple aspects
       tags: [ aspects ]
       description: >-
-        Create a new aspect. If the Refocus configuration parameter `useAccessToken` is set to `true`, you must include an `Authorization` request header with your [JSON Web Token](https://tools.ietf.org/html/rfc7519) (JWT) as the value. You can get a token using `POST /v1/register` or `POST /v1/tokens`.
+        Create a new aspect or multiple aspects. If the Refocus configuration parameter `useAccessToken` is set to `true`, you must include an `Authorization` request header with your [JSON Web Token](https://tools.ietf.org/html/rfc7519) (JWT) as the value. You can get a token using `POST /v1/register` or `POST /v1/tokens`.
       operationId: postAspect
       parameters:
         -
@@ -257,138 +257,140 @@ paths:
           in: body
           required: true
           schema:
-            type: object
-            description: A type of observation which can be measured.
-            properties:
-              description:
-                type: string
-                maxLength: 4096
-                description: >
-                  A description of the aspect. A lens may choose to display this
-                  information to the user.
-              helpEmail:
-                type: string
-                description: >
-                  The email address where a user can go to get more help about the aspect.
-                  A lens may choose to display this information to the user e.g. if the
-                  user clicks a “help” icon attached to the aspect.
-                maxLength: 254
-              helpUrl:
-                type: string
-                maxLength: 2082
-                description: >
-                  The url where a user can go to get more help about the aspect. A lens
-                  may choose to display this information to the user e.g. if the user
-                  clicks a “help” icon attached to the aspect.
-              imageUrl:
-                type: string
-                maxLength: 2082
-                description: Optional icon to represent the aspect.
-              isPublished:
-                type: boolean
-                default: false
-                description: >
-                  This affects the visibility of samples; defaults to false. When set to
-                  true, all the samples for this aspect are readable by other users; when
-                  set to false, the samples for this aspect are only readable by the owner
-                  of the aspect.
-              name:
-                type: string
-                maxLength: 60
-                pattern: ^[0-9A-Za-z_\\-]{1,60}$
-                description: >
-                  Max 60 characters; case insensitive; allows alpha-numeric characters,
-                  underscore (_) and dash (-).
-              criticalRange:
-                type: array
-                items:
-                  type: number
-                maxLength: 2
-                minLength: 2
-                example: [1,7]
-                description: >
-                  A two-element array of type decimal. Determines what range of values
-                  should be assigned Critical status.
-              warningRange:
-                type: array
-                items:
-                  type: number
-                maxLength: 2
-                minLength: 2
-                example: [1,7]
-                description: >
-                  A two-element array of type decimal. Determines what range of values
-                  should be assigned Warning status.
-              infoRange:
-                type: array
-                items:
-                  type: number
-                maxLength: 2
-                minLength: 2
-                example: [1,7]
-                description: >
-                  A two-element array of type decimal. Determines what range of values
-                  should be assigned Info status.
-              okRange:
-                type: array
-                items:
-                  type: number
-                maxLength: 2
-                minLength: 2
-                example: [1,7]
-                description: >
-                  A two-element array of type decimal. Determines what range of values
-                  should be assigned OK status.
-              timeout:
-                type: string
-                maxLength: 8
-                pattern: ^[0-9]+[smhdSMHD]$
-                description: >
-                  The length of time after which a sample is treated as 'N/A', in the form
-                  of /^[0-9]+[smhd]$/i. For example, use '5s' for five seconds, '2m' for
-                  two minutes, '12h' for twelve hours, '1d' for one day.
-              valueLabel:
-                type: string
-                maxLength: 10
-                description: >
-                  A short label the lens may display next to the value. Most useful to
-                  specify a unit of measurement, e.g. 'ms' or '%'.
-              valueType:
-                type: string
-                maxLength: 7
-                enum:
-                  - BOOLEAN
-                  - NUMERIC
-                  - PERCENT
-                default: BOOLEAN
-                description: >
-                  The sample value must be able to be coerced to the specified data type.
-                  This allows a lens to render sample data in different ways depending on
-                  their type.
-              tags:
-                type: array
-                items:
+            type: array
+            items:
+              type: object
+              description: A type of observation which can be measured.
+              properties:
+                description:
+                  type: string
+                  maxLength: 4096
+                  description: >
+                    A description of the aspect. A lens may choose to display this
+                    information to the user.
+                helpEmail:
+                  type: string
+                  description: >
+                    The email address where a user can go to get more help about the aspect.
+                    A lens may choose to display this information to the user e.g. if the
+                    user clicks a “help” icon attached to the aspect.
+                  maxLength: 254
+                helpUrl:
+                  type: string
+                  maxLength: 2082
+                  description: >
+                    The url where a user can go to get more help about the aspect. A lens
+                    may choose to display this information to the user e.g. if the user
+                    clicks a “help” icon attached to the aspect.
+                imageUrl:
+                  type: string
+                  maxLength: 2082
+                  description: Optional icon to represent the aspect.
+                isPublished:
+                  type: boolean
+                  default: false
+                  description: >
+                    This affects the visibility of samples; defaults to false. When set to
+                    true, all the samples for this aspect are readable by other users; when
+                    set to false, the samples for this aspect are only readable by the owner
+                    of the aspect.
+                name:
                   type: string
                   maxLength: 60
-                  pattern: ^[0-9A-Za-z_][0-9A-Za-z_\\-]{1,59}$
-                description: >
-                  Array of tag names. Tag name: Max 60 characters; case insensitive; allows alpha-numeric characters,
-                  underscore (_) and dash (-). Tag names cannot start with a dash (-).
-              relatedLinks:
-                type: array
-                items:
-                  $ref: "#/definitions/RelatedLinkRequest"
-                description: >
-                  RelatedLinks associated with this model.
-              rank:
-                type: number
-                description: >
-                  Provide guidance for how a lens should display aspects--ascending order by
-                  rank (numeric, nulls last) then within rank in ascending order by name
-                  (alphanumeric).
-            required:
-              - name
-              - timeout
+                  pattern: ^[0-9A-Za-z_\\-]{1,60}$
+                  description: >
+                    Max 60 characters; case insensitive; allows alpha-numeric characters,
+                    underscore (_) and dash (-).
+                criticalRange:
+                  type: array
+                  items:
+                    type: number
+                  maxLength: 2
+                  minLength: 2
+                  example: [1,7]
+                  description: >
+                    A two-element array of type decimal. Determines what range of values
+                    should be assigned Critical status.
+                warningRange:
+                  type: array
+                  items:
+                    type: number
+                  maxLength: 2
+                  minLength: 2
+                  example: [1,7]
+                  description: >
+                    A two-element array of type decimal. Determines what range of values
+                    should be assigned Warning status.
+                infoRange:
+                  type: array
+                  items:
+                    type: number
+                  maxLength: 2
+                  minLength: 2
+                  example: [1,7]
+                  description: >
+                    A two-element array of type decimal. Determines what range of values
+                    should be assigned Info status.
+                okRange:
+                  type: array
+                  items:
+                    type: number
+                  maxLength: 2
+                  minLength: 2
+                  example: [1,7]
+                  description: >
+                    A two-element array of type decimal. Determines what range of values
+                    should be assigned OK status.
+                timeout:
+                  type: string
+                  maxLength: 8
+                  pattern: ^[0-9]+[smhdSMHD]$
+                  description: >
+                    The length of time after which a sample is treated as 'N/A', in the form
+                    of /^[0-9]+[smhd]$/i. For example, use '5s' for five seconds, '2m' for
+                    two minutes, '12h' for twelve hours, '1d' for one day.
+                valueLabel:
+                  type: string
+                  maxLength: 10
+                  description: >
+                    A short label the lens may display next to the value. Most useful to
+                    specify a unit of measurement, e.g. 'ms' or '%'.
+                valueType:
+                  type: string
+                  maxLength: 7
+                  enum:
+                    - BOOLEAN
+                    - NUMERIC
+                    - PERCENT
+                  default: BOOLEAN
+                  description: >
+                    The sample value must be able to be coerced to the specified data type.
+                    This allows a lens to render sample data in different ways depending on
+                    their type.
+                tags:
+                  type: array
+                  items:
+                    type: string
+                    maxLength: 60
+                    pattern: ^[0-9A-Za-z_][0-9A-Za-z_\\-]{1,59}$
+                  description: >
+                    Array of tag names. Tag name: Max 60 characters; case insensitive; allows alpha-numeric characters,
+                    underscore (_) and dash (-). Tag names cannot start with a dash (-).
+                relatedLinks:
+                  type: array
+                  items:
+                    $ref: "#/definitions/RelatedLinkRequest"
+                  description: >
+                    RelatedLinks associated with this model.
+                rank:
+                  type: number
+                  description: >
+                    Provide guidance for how a lens should display aspects--ascending order by
+                    rank (numeric, nulls last) then within rank in ascending order by name
+                    (alphanumeric).
+              required:
+                - name
+                - timeout
       responses:
         201:
           description: >-

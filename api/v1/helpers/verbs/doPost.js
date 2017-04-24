@@ -45,9 +45,11 @@ function doPost(req, res, next, props) {
       featureToggles.isFeatureEnabled('enforceWritePermission'))
       .then((user) => redisModelSample.postSample(req.swagger.params, user));
   } else {
+    const modelPromise = Array.isArray(toPost) ?
+      props.model.bulkCreate(toPost, { validate: true }) : props.model.create(toPost);
     postPromise = featureToggles.isFeatureEnabled('enforceWritePermission') &&
       props.modelName === 'Sample' ? u.createSample(req, props) :
-      props.model.create(toPost);
+      modelPromise;
   }
 
   postPromise.then((o) => {

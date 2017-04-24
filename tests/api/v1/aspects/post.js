@@ -152,7 +152,7 @@ describe(`api: POST ${path}`, () => {
       .send(aspectToPost)
       .expect(constants.httpStatus.CREATED)
       .expect((res) => {
-        expect(res.body.tags).to.have.length(tags.length);
+        expect(res.body[0].tags).to.have.length(tags.length);
       })
       .end((err /* , res */) => {
         if (err) {
@@ -221,7 +221,7 @@ describe(`api: POST ${path}`, () => {
       .send(aspectToPost)
       .expect(constants.httpStatus.CREATED)
       .expect((res) => {
-        expect(res.body.tags).to.have.length(tags.length);
+        expect(res.body[0].tags).to.have.length(tags.length);
       })
       .end((err /* , res */) => {
         if (err) {
